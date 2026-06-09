@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>KKS Decoder</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg:        #ECF0F3;
+    --surface:   #FFFFFF;
+    --surface2:  #dde3e8;
+    --midnight:  #0E1C2F;
+    --copper:    #B5541A;
+    --amber:     #E8A020;
+    --cable:     #3D4A56;
+    --muted:     #7a8a96;
+    --border:    #c8d0d8;
+    --green:     #2e7d4f;
+    --text:      #0E1C2F;
+    --tag-fn:    #0E1C2F;
+    --tag-eq:    #6b2a0e;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── SUBTLE GRID ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(181,84,26,.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(181,84,26,.06) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── HEADER ── */
+  header {
+    position: relative; z-index: 10;
+    background: var(--midnight);
+    border-bottom: 3px solid var(--copper);
+    padding: 0 2rem;
+  }
+
+  .header-inner {
+    max-width: 1200px; margin: 0 auto;
+    display: flex; align-items: center; gap: 1.5rem;
+    padding: 1.1rem 0;
+  }
+
+  .logo-badge {
+    background: var(--copper);
+    color: #fff;
+    font-family: 'DM Mono', monospace;
+    font-size: .78rem; font-weight: 500;
+    padding: .35rem .65rem;
+    letter-spacing: .1em;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .logo-divider {
+    width: 1px; height: 36px;
+    background: var(--copper);
+    opacity: .5;
+    flex-shrink: 0;
+  }
+
+  .logo-text { display: flex; flex-direction: column; gap: .1rem; }
+
+  .logo-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1.15rem; font-weight: 700;
+    letter-spacing: .04em;
+    color: #fff;
+    line-height: 1;
+  }
+
+  .logo-sub {
+    font-family: 'DM Mono', monospace;
+    font-size: .68rem; color: var(--muted);
+    letter-spacing: .1em;
+  }
+
+  .header-right {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 1.5rem;
+  }
+
+  .brand-line {
+    font-family: 'DM Sans', sans-serif;
+    font-size: .72rem; color: var(--muted);
+    letter-spacing: .03em;
+    border-left: 2px solid var(--copper);
+    padding-left: .75rem;
+    line-height: 1.4;
+    display: none;
+  }
+  @media (min-width: 768px) { .brand-line { display: block; } }
+
+  .header-status {
+    display: flex; align-items: center; gap: .45rem;
+    font-family: 'DM Mono', monospace;
+    font-size: .72rem; color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+    transition: background .3s;
+    flex-shrink: 0;
+  }
+  .status-dot.ok  { background: var(--green); box-shadow: 0 0 5px var(--green); }
+  .status-dot.err { background: #c0392b; }
+
+  /* ── MAIN ── */
+  main {
+    position: relative; z-index: 1;
+    max-width: 1200px; margin: 0 auto;
+    padding: 2rem;
+  }
+
+  /* ── FILE LOADER ── */
+  #loader-section {
+    border: 1.5px dashed var(--border);
+    background: var(--surface);
+    border-radius: 3px;
+    padding: 3rem 2rem;
+    text-align: center;
+    margin-bottom: 2rem;
+    transition: border-color .3s, background .3s;
+  }
+  #loader-section.dragover {
+    border-color: var(--copper);
+    background: rgba(181,84,26,.04);
+  }
+  #loader-section.hidden { display: none; }
+
+  .loader-icon { font-size: 2.2rem; margin-bottom: 1rem; opacity: .5; }
+
+  .loader-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1.1rem; font-weight: 700;
+    letter-spacing: .03em; margin-bottom: .4rem;
+    color: var(--midnight);
+  }
+
+  .loader-sub { font-size: .85rem; color: var(--muted); margin-bottom: 1.5rem; line-height: 1.6; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: .45rem;
+    background: var(--copper); color: #fff;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .88rem; font-weight: 700;
+    letter-spacing: .06em;
+    padding: .6rem 1.5rem;
+    border: none; cursor: pointer; border-radius: 2px;
+    transition: background .2s, transform .1s;
+    text-transform: uppercase;
+  }
+  .btn:hover { background: #c96020; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+
+  .btn.secondary {
+    background: transparent; color: var(--copper);
+    border: 1.5px solid var(--copper);
+  }
+  .btn.secondary:hover { background: rgba(181,84,26,.08); transform: none; }
+
+  #file-input { display: none; }
+
+  /* ── INTRO PANEL ── */
+  #intro-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--copper);
+    border-radius: 3px;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(14,28,47,.06);
+  }
+  #intro-panel.hidden { display: none; }
+
+  .intro-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .75rem 1.2rem;
+    background: var(--surface2);
+    cursor: pointer; user-select: none;
+  }
+
+  .intro-header-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: .88rem; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+    color: var(--copper);
+  }
+
+  .intro-toggle {
+    font-family: 'DM Mono', monospace;
+    font-size: .75rem; color: var(--muted);
+    transition: transform .3s;
+  }
+  .intro-toggle.open { transform: rotate(180deg); }
+
+  .intro-body { display: none; padding: 1.2rem; }
+  .intro-body.open { display: block; }
+
+  .intro-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  .intro-table th {
+    text-align: left; padding: .45rem .75rem;
+    font-family: 'DM Mono', monospace;
+    font-size: .68rem; letter-spacing: .1em;
+    color: var(--muted); text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .intro-table td {
+    padding: .6rem .75rem;
+    border-bottom: 1px solid rgba(200,208,216,.5);
+    vertical-align: top; line-height: 1.6; color: var(--cable);
+  }
+  .intro-table tr:last-child td { border-bottom: none; }
+  .intro-table .cell-title {
+    font-weight: 700; color: var(--copper);
+    white-space: nowrap; width: 160px;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  /* ── SEARCH BAR ── */
+  #search-section { margin-bottom: 1.25rem; }
+  #search-section.hidden { display: none; }
+
+  .search-wrap {
+    display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;
+  }
+
+  .search-box { flex: 1; min-width: 260px; }
+
+  .search-label {
+    font-family: 'DM Mono', monospace;
+    font-size: .68rem; letter-spacing: .1em;
+    color: var(--muted); text-transform: uppercase;
+    display: block; margin-bottom: .35rem;
+  }
+
+  .search-input-wrap { position: relative; }
+
+  .search-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    color: var(--midnight);
+    font-family: 'DM Mono', monospace;
+    font-size: .95rem;
+    padding: .65rem 1rem .65rem 2.6rem;
+    border-radius: 2px; outline: none;
+    transition: border-color .2s;
+  }
+  .search-input:focus { border-color: var(--copper); }
+  .search-input::placeholder { color: var(--muted); font-size: .82rem; }
+
+  .search-icon {
+    position: absolute; left: .85rem; top: 50%; transform: translateY(-50%);
+    color: var(--muted); font-size: 1rem; pointer-events: none;
+  }
+
+  .filter-wrap { display: flex; gap: .75rem; flex-wrap: wrap; }
+  .filter-group { display: flex; flex-direction: column; gap: .35rem; }
+
+  .filter-select {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    color: var(--midnight);
+    font-family: 'DM Sans', sans-serif;
+    font-size: .85rem;
+    padding: .65rem .9rem;
+    border-radius: 2px; outline: none; cursor: pointer;
+    min-width: 180px;
+    transition: border-color .2s;
+  }
+  .filter-select:focus { border-color: var(--copper); }
+
+  /* ── LANG TOGGLE ── */
+  .lang-toggle {
+    display: flex;
+    border: 1.5px solid var(--border); border-radius: 2px; overflow: hidden;
+  }
+  .lang-btn {
+    background: var(--surface); color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: .72rem; letter-spacing: .08em;
+    padding: .45rem .85rem; border: none; cursor: pointer;
+    transition: background .2s, color .2s;
+  }
+  .lang-btn:not(:last-child) { border-right: 1px solid var(--border); }
+  .lang-btn.active { background: var(--copper); color: #fff; font-weight: 500; }
+
+  /* ── STATS BAR ── */
+  .stats-bar {
+    display: flex; gap: 1.5rem; align-items: center;
+    margin-bottom: .85rem;
+    font-family: 'DM Mono', monospace;
+    font-size: .72rem; color: var(--muted);
+  }
+  .stats-bar.hidden { display: none; }
+  .stat-val { color: var(--copper); font-weight: 500; margin-right: .25rem; }
+
+  /* ── RESULTS TABLE ── */
+  #results-section.hidden { display: none; }
+
+  .table-wrap {
+    border: 1px solid var(--border);
+    border-radius: 3px; overflow: hidden; overflow-x: auto;
+    box-shadow: 0 1px 6px rgba(14,28,47,.07);
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+
+  thead tr { background: var(--midnight); }
+
+  th {
+    text-align: left; padding: .7rem 1rem;
+    font-family: 'DM Mono', monospace;
+    font-size: .68rem; letter-spacing: .1em;
+    color: #aab4be; text-transform: uppercase;
+    border-bottom: 2px solid var(--copper);
+    white-space: nowrap; cursor: pointer; user-select: none;
+  }
+  th:hover { color: #fff; }
+  th .sort-arrow { margin-left: .3rem; opacity: .4; }
+  th.sorted .sort-arrow { opacity: 1; color: var(--amber); }
+
+  tbody tr {
+    border-bottom: 1px solid rgba(200,208,216,.6);
+    background: var(--surface);
+    transition: background .12s;
+    animation: rowIn .18s ease forwards;
+    opacity: 0;
+  }
+  tbody tr:nth-child(even) { background: #f5f7f9; }
+  @keyframes rowIn {
+    from { opacity:0; transform: translateY(3px); }
+    to   { opacity:1; transform: translateY(0); }
+  }
+  tbody tr:hover { background: rgba(181,84,26,.06); }
+  tbody tr:last-child { border-bottom: none; }
+
+  td { padding: .65rem 1rem; vertical-align: middle; color: var(--cable); }
+
+  .code-cell {
+    font-family: 'DM Mono', monospace;
+    font-size: .95rem; font-weight: 500;
+    color: var(--copper); white-space: nowrap; letter-spacing: .06em;
+  }
+
+  .group-tag {
+    display: inline-block;
+    font-family: 'DM Mono', monospace;
+    font-size: .67rem; letter-spacing: .07em;
+    padding: .2rem .55rem; border-radius: 2px;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .group-tag.fn  { background: rgba(14,28,47,.1);  color: var(--midnight); border: 1px solid rgba(14,28,47,.25); }
+  .group-tag.eq  { background: rgba(181,84,26,.1); color: var(--copper);   border: 1px solid rgba(181,84,26,.3); }
+  .group-tag.other { background: rgba(61,74,86,.08); color: var(--cable); border: 1px solid var(--border); }
+
+  .desc-cell { line-height: 1.55; color: var(--cable); }
+  .desc-cell .highlight {
+    background: rgba(232,160,32,.25);
+    color: var(--midnight); border-radius: 2px; padding: 0 2px;
+    font-weight: 600;
+  }
+
+  /* ── EMPTY STATE ── */
+  .empty-state {
+    text-align: center; padding: 4rem 2rem; color: var(--muted);
+  }
+  .empty-state .icon { font-size: 2.5rem; margin-bottom: 1rem; opacity: .35; }
+  .empty-state p { font-size: .9rem; }
+
+  /* ── PAGINATION ── */
+  .pagination {
+    display: flex; align-items: center; justify-content: center;
+    gap: .4rem; margin-top: 1.25rem; flex-wrap: wrap;
+  }
+  .pagination.hidden { display: none; }
+  .page-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--cable); font-family: 'DM Mono', monospace;
+    font-size: .75rem; padding: .35rem .7rem;
+    border-radius: 2px; cursor: pointer; transition: all .15s;
+  }
+  .page-btn:hover { border-color: var(--copper); color: var(--copper); }
+  .page-btn.active { background: var(--copper); color: #fff; border-color: var(--copper); font-weight: 500; }
+  .page-btn:disabled { opacity: .3; cursor: default; }
+
+  /* ── RELOAD ── */
+  #reload-btn { display: none; margin-bottom: 1.5rem; }
+
+  /* ── FOOTER ── */
+  footer {
+    position: relative; z-index: 1;
+    border-top: 1px solid var(--border);
+    margin-top: 3rem; padding: 1rem 2rem;
+    text-align: center;
+    font-family: 'DM Mono', monospace;
+    font-size: .68rem; color: var(--muted);
+    letter-spacing: .05em;
+  }
+  footer span { color: var(--copper); }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  @media (max-width: 640px) {
+    main { padding: 1rem; }
+    .search-wrap, .filter-wrap { flex-direction: column; }
+    .filter-select { min-width: unset; width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo-badge">KKS</div>
+    <div class="logo-divider"></div>
+    <div class="logo-text">
+      <div class="logo-title">KKS DECODER</div>
+      <div class="logo-sub">Kraftwerk-Kennzeichensystem</div>
+    </div>
+    <div class="header-right">
+      <div class="brand-line">
+        Electrical Engineering · Drives · LV Systems · Automation
+      </div>
+      <div class="header-status">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">NO DATA</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- FILE LOADER -->
+  <div id="loader-section">
+    <div class="loader-icon">📂</div>
+    <div class="loader-title">Load KKS Reference File</div>
+    <p class="loader-sub">
+      Select the Excel file (.xlsx) containing the KKS code reference table.<br/>
+      Expected sheets: <strong>Introduction</strong> · <strong>Codes</strong>
+    </p>
+    <input type="file" id="file-input" accept=".xlsx,.xls"/>
+    <button class="btn" onclick="document.getElementById('file-input').click()">
+      ⬆ Load Excel File
+    </button>
+  </div>
+
+  <!-- RELOAD BTN -->
+  <div id="reload-btn">
+    <button class="btn secondary" onclick="resetTool()">↺ Load Another File</button>
+  </div>
+
+  <!-- INTRO PANEL -->
+  <div id="intro-panel" class="hidden">
+    <div class="intro-header" onclick="toggleIntro()">
+      <span class="intro-header-title">📋 Introduction Notes</span>
+      <span class="intro-toggle" id="intro-toggle">▼</span>
+    </div>
+    <div class="intro-body" id="intro-body">
+      <table class="intro-table">
+        <thead>
+          <tr>
+            <th>Title (EN)</th><th>Titel (DE)</th>
+            <th>Content (EN)</th><th>Inhalt (DE)</th>
+          </tr>
+        </thead>
+        <tbody id="intro-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SEARCH -->
+  <div id="search-section" class="hidden">
+    <div class="search-wrap">
+      <div class="search-box">
+        <label class="search-label" for="search-input">Search Code or Description</label>
+        <div class="search-input-wrap">
+          <span class="search-icon">⌕</span>
+          <input type="text" id="search-input" class="search-input"
+                 placeholder="e.g.  A  ·  pump  ·  Pumpe …"
+                 oninput="onSearch()"/>
+        </div>
+      </div>
+      <div class="filter-wrap">
+        <div class="filter-group">
+          <label class="search-label">Group Filter</label>
+          <select id="group-filter" class="filter-select" onchange="onSearch()">
+            <option value="">All Groups</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label class="search-label">Display Language</label>
+          <div class="lang-toggle">
+            <button class="lang-btn active" id="lang-en" onclick="setLang('en')">EN</button>
+            <button class="lang-btn" id="lang-de" onclick="setLang('de')">DE</button>
+            <button class="lang-btn" id="lang-both" onclick="setLang('both')">BOTH</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-bar hidden" id="stats-bar">
+    <span><span class="stat-val" id="stat-showing">0</span>results</span>
+    <span><span class="stat-val" id="stat-total">0</span>total codes</span>
+    <span id="stat-group-info"></span>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="results-section" class="hidden">
+    <div class="table-wrap">
+      <table>
+        <thead><tr id="table-head"></tr></thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+    <div class="pagination hidden" id="pagination"></div>
+  </div>
+
+</main>
+
+<footer>
+  KKS Decoder · Electrical Engineering · Drives · LV Systems · Automation ·
+  <span>Engineering Reliable Electrical Systems for Industry and Energy Transition</span>
+</footer>
+
+<script>
+/* ════════════════════════════════════════════════════════
+   CONFIG — set your SharePoint path here
+════════════════════════════════════════════════════════ */
+const FIXED_PATH = 'KKS_Reference.xlsx'; // ← update to full SharePoint URL if needed
+
+/* ════════════════════════════════════════════════════════
+   STATE
+════════════════════════════════════════════════════════ */
+let allCodes = [];
+let filtered  = [];
+let lang      = 'en';
+let sortCol   = null;
+let sortAsc   = true;
+let page      = 1;
+const PAGE_SIZE = 50;
+
+/* ════════════════════════════════════════════════════════
+   AUTO-LOAD FROM FIXED PATH
+════════════════════════════════════════════════════════ */
+window.addEventListener('load', () => {
+  if (!FIXED_PATH) return;
+  setStatus('loading', 'CONNECTING…');
+  fetch(FIXED_PATH)
+    .then(res => {
+      if (!res.ok) throw new Error('Not found');
+      return res.arrayBuffer();
+    })
+    .then(buffer => {
+      const wb = XLSX.read(buffer, { type: 'array' });
+      parseWorkbook(wb);
+    })
+    .catch(() => {
+      // File not reachable — silently fall back to manual load
+      setStatus('', 'NO DATA');
+    });
+});
+
+/* ════════════════════════════════════════════════════════
+   FILE LOADING — manual
+════════════════════════════════════════════════════════ */
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) readFile(file);
+});
+
+const loaderSection = document.getElementById('loader-section');
+loaderSection.addEventListener('dragover', e => { e.preventDefault(); loaderSection.classList.add('dragover'); });
+loaderSection.addEventListener('dragleave', () => loaderSection.classList.remove('dragover'));
+loaderSection.addEventListener('drop', e => {
+  e.preventDefault(); loaderSection.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) readFile(file);
+});
+
+function readFile(file) {
+  setStatus('loading', 'LOADING…');
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      parseWorkbook(wb);
+    } catch(err) {
+      setStatus('err', 'ERROR');
+      alert('Could not read file: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseWorkbook(wb) {
+  // ── Introduction sheet ──
+  const introSheet = wb.Sheets['Introduction'] || wb.Sheets[wb.SheetNames[0]];
+  const introData  = XLSX.utils.sheet_to_json(introSheet, { defval: '', range: 1 });
+
+  // ── Codes sheet ──
+  const codesSheetName = wb.SheetNames.find(n => n.toLowerCase().includes('code'))
+                      || wb.SheetNames[wb.SheetNames.length > 1 ? 1 : 0];
+  const codesSheet = wb.Sheets[codesSheetName];
+  const codesData  = XLSX.utils.sheet_to_json(codesSheet, { defval: '', range: 1 });
+
+  function normKey(k) { return k.replace(/\n/g,' ').replace(/\s+/g,' ').trim().toLowerCase(); }
+
+  allCodes = codesData.map(row => {
+    const r = {};
+    Object.keys(row).forEach(k => { r[normKey(k)] = row[k]; });
+    return {
+      code:    findCol(r, ['code']) || '',
+      groupEn: findCol(r, ['group (english) gruppe (englisch)','group (english)','group english','group en']) || '',
+      groupDe: findCol(r, ['group (german) gruppe (deutsch)','group (german)','group german','gruppe (deutsch)','group de']) || '',
+      descEn:  findCol(r, ['description (english) beschreibung (englisch)','description (english)','description english','desc en']) || '',
+      descDe:  findCol(r, ['description (german) beschreibung (deutsch)','description (german)','description german','beschreibung (deutsch)','desc de']) || '',
+    };
+  }).filter(r => r.code !== '');
+
+  buildIntro(introData);
+  buildGroupFilter();
+
+  document.getElementById('loader-section').classList.add('hidden');
+  document.getElementById('reload-btn').style.display = 'block';
+  document.getElementById('search-section').classList.remove('hidden');
+  document.getElementById('stats-bar').classList.remove('hidden');
+  document.getElementById('results-section').classList.remove('hidden');
+  if (introData.length > 0) document.getElementById('intro-panel').classList.remove('hidden');
+
+  setStatus('ok', `${allCodes.length} CODES LOADED`);
+  onSearch();
+}
+
+function findCol(row, candidates) {
+  for (const c of candidates) {
+    const key = Object.keys(row).find(k => k === c.toLowerCase());
+    if (key !== undefined) return row[key];
+  }
+  for (const c of candidates) {
+    const first = c.toLowerCase().split(' ')[0];
+    const key = Object.keys(row).find(k => k.startsWith(first));
+    if (key !== undefined) return row[key];
+  }
+  return undefined;
+}
+
+/* ════════════════════════════════════════════════════════
+   INTRO
+════════════════════════════════════════════════════════ */
+function buildIntro(data) {
+  const tbody = document.getElementById('intro-tbody');
+  tbody.innerHTML = '';
+  if (!data.length) return;
+  const keys = Object.keys(data[0]);
+  data.forEach(row => {
+    const vals = keys.map(k => row[k] || '');
+    if (vals.every(v => v === '')) return;
+    const tr = document.createElement('tr');
+    tr.innerHTML = vals.map((v, i) =>
+      `<td class="${i < 2 ? 'cell-title' : ''}">${escHtml(String(v))}</td>`
+    ).join('');
+    tbody.appendChild(tr);
+  });
+}
+
+function toggleIntro() {
+  const body   = document.getElementById('intro-body');
+  const toggle = document.getElementById('intro-toggle');
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  toggle.classList.toggle('open', !isOpen);
+}
+
+/* ════════════════════════════════════════════════════════
+   GROUP FILTER
+════════════════════════════════════════════════════════ */
+function buildGroupFilter() {
+  const sel = document.getElementById('group-filter');
+  sel.innerHTML = '<option value="">All Groups</option>';
+  const groups = [...new Set(allCodes.map(r => r.groupEn).filter(Boolean))].sort();
+  groups.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g; opt.textContent = g;
+    sel.appendChild(opt);
+  });
+}
+
+/* ════════════════════════════════════════════════════════
+   SEARCH & FILTER
+════════════════════════════════════════════════════════ */
+function onSearch() {
+  const q   = document.getElementById('search-input').value.trim().toLowerCase();
+  const grp = document.getElementById('group-filter').value;
+  page = 1;
+
+  filtered = allCodes.filter(r => {
+    const matchGrp = !grp || r.groupEn === grp;
+    if (!matchGrp) return false;
+    if (!q) return true;
+    return r.code.toLowerCase().includes(q)
+        || r.groupEn.toLowerCase().includes(q)
+        || r.groupDe.toLowerCase().includes(q)
+        || r.descEn.toLowerCase().includes(q)
+        || r.descDe.toLowerCase().includes(q);
+  });
+
+  if (sortCol) applySort(false);
+  renderStats();
+  renderTable();
+  renderPagination();
+}
+
+/* ════════════════════════════════════════════════════════
+   LANGUAGE
+════════════════════════════════════════════════════════ */
+function setLang(l) {
+  lang = l;
+  ['en','de','both'].forEach(x => document.getElementById('lang-'+x).classList.toggle('active', x === l));
+  buildTableHead();
+  renderTable();
+}
+
+/* ════════════════════════════════════════════════════════
+   SORT
+════════════════════════════════════════════════════════ */
+function sortBy(col) {
+  if (sortCol === col) { sortAsc = !sortAsc; }
+  else { sortCol = col; sortAsc = true; }
+  applySort(true);
+}
+
+function applySort(reRender) {
+  filtered.sort((a, b) => {
+    const va = String(a[sortCol] || '').toLowerCase();
+    const vb = String(b[sortCol] || '').toLowerCase();
+    return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
+  if (reRender) { renderTable(); renderPagination(); }
+}
+
+/* ════════════════════════════════════════════════════════
+   RENDER
+════════════════════════════════════════════════════════ */
+function buildTableHead() {
+  const tr   = document.getElementById('table-head');
+  const cols = getVisibleCols();
+  tr.innerHTML = cols.map(c =>
+    `<th onclick="sortBy('${c.key}')" class="${sortCol===c.key?'sorted':''}">
+      ${c.label} <span class="sort-arrow">${sortCol===c.key?(sortAsc?'↑':'↓'):'↕'}</span>
+     </th>`
+  ).join('');
+}
+
+function getVisibleCols() {
+  const cols = [{ key:'code', label:'Code' }];
+  if (lang === 'en')   cols.push({ key:'groupEn', label:'Group' },      { key:'descEn', label:'Description' });
+  if (lang === 'de')   cols.push({ key:'groupDe', label:'Gruppe' },     { key:'descDe', label:'Beschreibung' });
+  if (lang === 'both') cols.push(
+    { key:'groupEn', label:'Group (EN)' }, { key:'groupDe', label:'Gruppe (DE)' },
+    { key:'descEn',  label:'Description (EN)' }, { key:'descDe', label:'Beschreibung (DE)' }
+  );
+  return cols;
+}
+
+function renderStats() {
+  document.getElementById('stat-showing').textContent = filtered.length;
+  document.getElementById('stat-total').textContent   = allCodes.length;
+  const grp = document.getElementById('group-filter').value;
+  document.getElementById('stat-group-info').textContent = grp ? `· ${grp}` : '';
+}
+
+function renderTable() {
+  buildTableHead();
+  const q     = document.getElementById('search-input').value.trim().toLowerCase();
+  const tbody = document.getElementById('table-body');
+  const cols  = getVisibleCols();
+  const start = (page - 1) * PAGE_SIZE;
+  const slice = filtered.slice(start, start + PAGE_SIZE);
+
+  if (!slice.length) {
+    tbody.innerHTML = `<tr><td colspan="${cols.length}">
+      <div class="empty-state">
+        <div class="icon">⌀</div>
+        <p>No codes match your search.</p>
+      </div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = slice.map((row, i) => {
+    const tds = cols.map(c => {
+      if (c.key === 'code') return `<td class="code-cell">${escHtml(row.code)}</td>`;
+      if (c.key === 'groupEn' || c.key === 'groupDe') {
+        const val = row[c.key];
+        return `<td><span class="group-tag ${tagClass(val)}">${escHtml(val)}</span></td>`;
+      }
+      return `<td class="desc-cell">${highlight(escHtml(row[c.key]), q)}</td>`;
+    }).join('');
+    return `<tr style="animation-delay:${i*0.012}s">${tds}</tr>`;
+  }).join('');
+}
+
+function tagClass(val) {
+  if (!val) return 'other';
+  const v = val.toLowerCase();
+  if (v.includes('function') || v.includes('funktion')) return 'fn';
+  if (v.includes('equipment') || v.includes('ausrüst') || v.includes('gerat') || v.includes('gerät')) return 'eq';
+  return 'other';
+}
+
+function highlight(text, q) {
+  if (!q) return text;
+  const re = new RegExp(`(${escRegex(q)})`, 'gi');
+  return text.replace(re, '<span class="highlight">$1</span>');
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGINATION
+════════════════════════════════════════════════════════ */
+function renderPagination() {
+  const pag   = document.getElementById('pagination');
+  const total = Math.ceil(filtered.length / PAGE_SIZE);
+  if (total <= 1) { pag.classList.add('hidden'); return; }
+  pag.classList.remove('hidden');
+
+  let html = `<button class="page-btn" onclick="goPage(${page-1})" ${page===1?'disabled':''}>‹ Prev</button>`;
+  pageRange(page, total).forEach(p => {
+    if (p === '…') html += `<span class="page-btn" style="cursor:default">…</span>`;
+    else html += `<button class="page-btn ${p===page?'active':''}" onclick="goPage(${p})">${p}</button>`;
+  });
+  html += `<button class="page-btn" onclick="goPage(${page+1})" ${page===total?'disabled':''}>Next ›</button>`;
+  pag.innerHTML = html;
+}
+
+function goPage(p) {
+  const total = Math.ceil(filtered.length / PAGE_SIZE);
+  if (p < 1 || p > total) return;
+  page = p;
+  renderTable(); renderPagination();
+  document.getElementById('results-section').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function pageRange(cur, total) {
+  if (total <= 7) return Array.from({length:total}, (_,i)=>i+1);
+  const pages = [1];
+  if (cur > 3) pages.push('…');
+  for (let p = Math.max(2,cur-1); p <= Math.min(total-1,cur+1); p++) pages.push(p);
+  if (cur < total-2) pages.push('…');
+  pages.push(total);
+  return pages;
+}
+
+/* ════════════════════════════════════════════════════════
+   UTILS
+════════════════════════════════════════════════════════ */
+function setStatus(state, text) {
+  const dot = document.getElementById('status-dot');
+  document.getElementById('status-text').textContent = text;
+  dot.className = 'status-dot' + (state==='ok' ? ' ok' : state==='err' ? ' err' : '');
+}
+
+function resetTool() {
+  allCodes = []; filtered = [];
+  document.getElementById('loader-section').classList.remove('hidden');
+  document.getElementById('reload-btn').style.display = 'none';
+  document.getElementById('intro-panel').classList.add('hidden');
+  document.getElementById('search-section').classList.add('hidden');
+  document.getElementById('stats-bar').classList.add('hidden');
+  document.getElementById('results-section').classList.add('hidden');
+  document.getElementById('search-input').value = '';
+  document.getElementById('file-input').value = '';
+  setStatus('', 'NO DATA');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+</script>
+</body>
+</html>
